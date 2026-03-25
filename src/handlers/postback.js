@@ -5,8 +5,8 @@ const STATUS_LABEL = { yes: '参加', no: '不参加', maybe: '検討中' };
 const STATUS_EMOJI = { yes: '✅', no: '❌', maybe: '🤔' };
 
 async function handlePostback(client, event) {
-  const { data, source, replyToken } = event;
-  const params = Object.fromEntries(new URLSearchParams(data));
+  const { source, replyToken } = event;
+  const params = Object.fromEntries(new URLSearchParams(event.postback.data));
 
   if (params.action !== 'respond') return;
 
