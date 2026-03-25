@@ -20,7 +20,7 @@ async function handleMessage(client, event) {
     const [, title, date, location, deadline] = match;
     const eventId = crypto.randomBytes(6).toString('hex');
 
-    db.createEvent({
+    await db.createEvent({
       id: eventId,
       group_id: groupId,
       title,
@@ -35,7 +35,7 @@ async function handleMessage(client, event) {
       []
     );
 
-    const reply = await client.replyMessage({
+    await client.replyMessage({
       replyToken: event.replyToken,
       messages: [
         card,
@@ -50,7 +50,7 @@ async function handleMessage(client, event) {
 
   // 集計表示
   if (text === '集計') {
-    const activeEvent = db.getActiveEventByGroup(groupId);
+    const activeEvent = await db.getActiveEventByGroup(groupId);
     if (!activeEvent) {
       await client.replyMessage({
         replyToken: event.replyToken,
@@ -59,7 +59,7 @@ async function handleMessage(client, event) {
       return;
     }
 
-    const responses = db.getResponses(activeEvent.id);
+    const responses = await db.getResponses(activeEvent.id);
     const card = buildAttendanceCard(activeEvent, responses);
     await client.replyMessage({
       replyToken: event.replyToken,

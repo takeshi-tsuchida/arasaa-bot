@@ -28,10 +28,10 @@ async function handlePostback(client, event) {
     // プロフィール取得失敗時はデフォルト名を使う
   }
 
-  db.upsertResponse({ event_id, user_id: userId, display_name: displayName, status });
+  await db.upsertResponse({ event_id, user_id: userId, display_name: displayName, status });
 
-  const eventData = db.getEvent(event_id);
-  const responses = db.getResponses(event_id);
+  const eventData = await db.getEvent(event_id);
+  const responses = await db.getResponses(event_id);
   const card = buildAttendanceCard(eventData, responses);
 
   await client.replyMessage({

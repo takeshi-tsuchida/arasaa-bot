@@ -1,60 +1,79 @@
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 
-const DATA_FILE = path.join(__dirname, '..', 'data.json');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
 
-function load() {
-  if (!fs.existsSync(DATA_FILE)) {
-    return { events: {}, responses: {} };
-  }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+async function init() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      date TEXT NOT NULL,
+      location TEXT NOT NULL,
+      deadline TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS responses (
+      event_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('yes', 'no', 'maybe')),
+      responded_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (event_id, user_id)
+    );
+  `);
 }
 
-function save(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
+init().catch(console.error);
 
 module.exports = {
-  createEvent(event) {
-    const data = load();
-    data.events[event.id] = { ...event, created_at: new Date().toISOString() };
-    save(data);
+  async createEvent(event) {
+    await pool.query(
+      `INSERT INTO events (id, group_id, title, date, location, deadline, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [event.id, event.group_id, event.title, event.date, event.location, event.deadline, event.created_by]
+    );
   },
 
-  getEvent(eventId) {
-    return load().events[eventId] || null;
+  async getEvent(eventId) {
+    const { rows } = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
+    return rows[0] || null;
   },
 
-  getActiveEventByGroup(groupId) {
-    const { events } = load();
-    const today = new Date().toISOString().slice(0, 10);
-    return Object.values(events)
-      .filter(e => e.group_id === groupId && e.deadline >= today)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null;
+  async getActiveEventByGroup(groupId) {
+    const { rows } = await pool.query(
+      `SELECT * FROM events
+       WHERE group_id = $1 AND deadline >= CURRENT_DATE
+       ORDER BY created_at DESC LIMIT 1`,
+      [groupId]
+    );
+    return rows[0] || null;
   },
 
-  upsertResponse({ event_id, user_id, display_name, status }) {
-    const data = load();
-    if (!data.responses[event_id]) data.responses[event_id] = {};
-    data.responses[event_id][user_id] = {
-      display_name,
-      status,
-      responded_at: new Date().toISOString(),
-    };
-    save(data);
+  async upsertResponse({ event_id, user_id, display_name, status }) {
+    await pool.query(
+      `INSERT INTO responses (event_id, user_id, display_name, status, responded_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (event_id, user_id) DO UPDATE SET
+         status = $4, display_name = $3, responded_at = NOW()`,
+      [event_id, user_id, display_name, status]
+    );
   },
 
-  getResponses(eventId) {
-    const { responses } = load();
-    const map = responses[eventId] || {};
-    return Object.entries(map).map(([user_id, r]) => ({ user_id, ...r }));
+  async getResponses(eventId) {
+    const { rows } = await pool.query('SELECT * FROM responses WHERE event_id = $1', [eventId]);
+    return rows;
   },
 
-  getEventsNeedingReminder() {
-    const { events } = load();
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
-    return Object.values(events).filter(e => e.deadline === tomorrowStr);
+  async getEventsNeedingReminder() {
+    const { rows } = await pool.query(
+      `SELECT * FROM events WHERE deadline = CURRENT_DATE + INTERVAL '1 day'`
+    );
+    return rows;
   },
 };

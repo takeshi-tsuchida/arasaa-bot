@@ -5,11 +5,10 @@ const { buildAttendanceCard } = require('./flex/attendanceCard');
 function startCron(client) {
   // 毎朝9時にリマインド
   cron.schedule('0 9 * * *', async () => {
-    const events = db.getEventsNeedingReminder();
+    const events = await db.getEventsNeedingReminder();
 
     for (const event of events) {
-      const responses = db.getResponses(event.id);
-      const respondedIds = new Set(responses.map(r => r.user_id));
+      const responses = await db.getResponses(event.id);
       const card = buildAttendanceCard(event, responses);
 
       try {
