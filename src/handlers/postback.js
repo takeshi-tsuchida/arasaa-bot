@@ -1,8 +1,6 @@
 const db = require('../db');
 const { buildAttendanceCard } = require('../flex/attendanceCard');
 
-const STATUS_LABEL = { yes: '参加', no: '不参加', maybe: '検討中' };
-const STATUS_EMOJI = { yes: '✅', no: '❌', maybe: '🤔' };
 
 async function handlePostback(client, event) {
   const { source, replyToken } = event;
@@ -36,13 +34,7 @@ async function handlePostback(client, event) {
 
   await client.replyMessage({
     replyToken,
-    messages: [
-      {
-        type: 'text',
-        text: `${displayName} さんが ${STATUS_EMOJI[status]} ${STATUS_LABEL[status]} で回答しました！`,
-      },
-      card,
-    ],
+    messages: [card],
   });
 }
 
