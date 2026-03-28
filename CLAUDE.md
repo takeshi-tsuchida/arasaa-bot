@@ -1,168 +1,168 @@
 # CLAUDE.md
 
-This file provides guidance for AI assistants working in this repository.
+このファイルは、このリポジトリで作業するAIアシスタント向けのガイドです。
 
-## Project Overview
+## プロジェクト概要
 
-**arasaa-bot** is a LINE Messaging Bot for drinking party attendance tracking, targeted at Japanese "arasaa-kai" (groups of people in their 30s-40s). Built with Node.js, Express, PostgreSQL (Supabase), and the LINE Messaging API.
+**arasaa-bot** は、飲み会の出欠確認を行うLINE Messaging Botです。日本の「アラサー会」（30〜40代のグループ）をターゲットとしています。Node.js、Express、PostgreSQL（Supabase）、LINE Messaging APIで構築されています。
 
-### What the bot does
-- Allows users in LINE group chats to create drinking events with title, date, location, and RSVP deadline
-- Members respond with attendance status (yes/maybe/no) via interactive Flex Message buttons
-- Shows real-time attendance tallies with participant names
-- Sends daily 9:00 AM JST reminder messages before deadlines
+### Botの機能
+- LINEグループチャットで、タイトル・日時・場所・出欠締切を設定した飲み会イベントを作成できる
+- メンバーがFlexメッセージのボタンで出欠（参加/未定/不参加）を回答できる
+- 参加者名を含むリアルタイムの出欠集計を表示する
+- 締切前日に毎朝9時（JST）にリマインダーメッセージを送信する
 
-## Codebase Structure
+## コードベース構造
 
 ```
 src/
-├── index.js              # Express server, webhook endpoint, LINE SDK setup
-├── db.js                 # PostgreSQL connection pool and all DB functions
-├── cron.js               # Daily reminder scheduler (node-cron)
+├── index.js              # Expressサーバー、webhookエンドポイント、LINE SDK初期化
+├── db.js                 # PostgreSQL接続プールと全DBアクセス関数
+├── cron.js               # 毎日のリマインダースケジューラー（node-cron）
 ├── handlers/
-│   ├── message.js        # Text message handling (event creation, commands)
-│   └── postback.js       # Button click postback handling
+│   ├── message.js        # テキストメッセージ処理（イベント作成、コマンド）
+│   └── postback.js       # ボタンクリックのpostback処理
 └── flex/
-    └── attendanceCard.js # LINE Flex Message card builder
+    └── attendanceCard.js # LINE Flexメッセージカードのビルダー
 ```
 
-## Development Workflow
+## 開発ワークフロー
 
-### Setup
+### セットアップ
 
-1. Install dependencies: `npm install`
-2. Copy environment variables (see [Environment Variables](#environment-variables))
-3. Run in dev mode: `npm run dev`
+1. 依存パッケージのインストール: `npm install`
+2. 環境変数の設定（[環境変数](#環境変数)参照）
+3. 開発モードで起動: `npm run dev`
 
-### Scripts
+### スクリプト
 
-- `npm start` — Production mode (`node src/index.js`)
-- `npm run dev` — Development mode with auto-reload via nodemon
+- `npm start` — 本番モード（`node src/index.js`）
+- `npm run dev` — nodemonによる自動リロード付き開発モード
 
-### No Tests
+### テストなし
 
-This project has no test suite. When modifying logic, test manually via LINE's webhook simulator or a real LINE bot connection.
+このプロジェクトにはテストスイートがありません。ロジックを変更した場合は、LINEのwebhookシミュレーターまたは実際のLINE Bot接続で手動テストしてください。
 
-## Architecture
+## アーキテクチャ
 
-### Request Flow
+### リクエストの流れ
 
 ```
-LINE Platform
+LINEプラットフォーム
     → POST /webhook (index.js)
-        → message event → handlers/message.js
-        → postback event → handlers/postback.js
-            → db.js (read/write PostgreSQL)
-            → flex/attendanceCard.js (build response card)
-        → LINE reply via @line/bot-sdk client
+        → messageイベント → handlers/message.js
+        → postbackイベント → handlers/postback.js
+            → db.js (PostgreSQLの読み書き)
+            → flex/attendanceCard.js (レスポンスカードの構築)
+        → @line/bot-sdk クライアントでLINEに返信
 ```
 
-### Database Schema
+### データベーススキーマ
 
-**`events` table**
-| Column | Type | Notes |
+**`events` テーブル**
+| カラム | 型 | 備考 |
 |---|---|---|
 | id | TEXT PRIMARY KEY | crypto.randomBytes(8).toString('hex') |
-| group_id | TEXT | LINE group/room/user source ID |
-| title | TEXT | Event name |
-| date | TEXT | Event date/time string |
-| location | TEXT | Venue |
-| deadline | TEXT | RSVP deadline string |
-| created_by | TEXT | LINE userId of creator |
-| created_at | TIMESTAMP | Auto-set |
+| group_id | TEXT | LINEグループ/ルーム/ユーザーのソースID |
+| title | TEXT | イベント名 |
+| date | TEXT | 日時の文字列 |
+| location | TEXT | 会場 |
+| deadline | TEXT | 締切日の文字列 |
+| created_by | TEXT | 作成者のLINE userId |
+| created_at | TIMESTAMP | 自動設定 |
 
-**`responses` table**
-| Column | Type | Notes |
+**`responses` テーブル**
+| カラム | 型 | 備考 |
 |---|---|---|
 | event_id | TEXT | FK → events.id |
 | user_id | TEXT | LINE userId |
-| display_name | TEXT | LINE display name at time of response |
+| display_name | TEXT | 回答時のLINE表示名 |
 | status | TEXT | CHECK: 'yes' / 'no' / 'maybe' |
 
-Composite PK: `(event_id, user_id)` — one response per user per event.
+複合PK: `(event_id, user_id)` — 1ユーザーにつき1イベント1回答。
 
-### Key Database Functions (src/db.js)
+### 主要なDB関数（src/db.js）
 
-- `createEvent(groupId, title, date, location, deadline, createdBy)` — Insert new event
-- `getEvent(eventId)` — Fetch event by ID
-- `getActiveEventByGroup(groupId)` — Get the latest event for a group
-- `upsertResponse(eventId, userId, displayName, status)` — Insert or update RSVP
-- `getResponses(eventId)` — Get all responses for an event
-- `getEventsNeedingReminder()` — Events where deadline is tomorrow
+- `createEvent(groupId, title, date, location, deadline, createdBy)` — イベントを新規作成
+- `getEvent(eventId)` — IDでイベントを取得
+- `getActiveEventByGroup(groupId)` — グループの最新イベントを取得
+- `upsertResponse(eventId, userId, displayName, status)` — 出欠を登録または更新
+- `getResponses(eventId)` — イベントの全回答を取得
+- `getEventsNeedingReminder()` — 締切が翌日のイベントを取得
 
-## Key Conventions
+## 主要な規約
 
-### Language
+### 言語
 
-- Comments and user-facing messages are in **Japanese**
-- Variable/function names are in **English camelCase**
+- コメントとユーザー向けメッセージは**日本語**
+- 変数名・関数名は**英語のcamelCase**
 
-### Message Commands (Japanese)
+### メッセージコマンド（日本語）
 
-Text messages are parsed with regex in `src/handlers/message.js`:
+テキストメッセージは `src/handlers/message.js` の正規表現で解析されます:
 
-| Input | Action |
+| 入力 | 動作 |
 |---|---|
-| `飲み会 <title> <date> <location> <deadline>` | Create new event |
-| `集計` | Show attendance tally |
-| `ヘルプ` or `help` | Show usage instructions |
+| `飲み会 <タイトル> <日時> <場所> <締切>` | 新規イベント作成 |
+| `集計` | 出欠集計を表示 |
+| `ヘルプ` または `help` | 使い方を表示 |
 
-### Postback Data Format
+### postbackデータのフォーマット
 
-Button clicks send postback data as URL query strings:
+ボタンクリックはURLクエリ文字列形式でpostbackデータを送信します:
 ```
 action=respond&event_id=<id>&status=yes
 action=respond&event_id=<id>&status=no
 action=respond&event_id=<id>&status=maybe
 ```
 
-### Source ID Resolution
+### ソースIDの解決順序
 
-Group context is resolved in priority order (message.js):
-1. `event.source.groupId` — LINE group chat
-2. `event.source.roomId` — LINE room chat
-3. `event.source.userId` — Direct message fallback
+グループコンテキストは以下の優先順で解決されます（message.js）:
+1. `event.source.groupId` — LINEグループチャット
+2. `event.source.roomId` — LINEルームチャット
+3. `event.source.userId` — ダイレクトメッセージ（フォールバック）
 
-### Flex Message Card Colors
+### FlexメッセージカードのカラーコードFlexメッセージカードの色
 
-- Header background: `#FF6B35` (orange)
-- Yes button: `#27AE60` (green)
-- Maybe button: `#F39C12` (orange)
-- No button: `#E74C3C` (red)
+- ヘッダー背景: `#FF6B35`（オレンジ）
+- 参加ボタン: `#27AE60`（緑）
+- 未定ボタン: `#F39C12`（オレンジ）
+- 不参加ボタン: `#E74C3C`（赤）
 
-### Database Queries
+### データベースクエリ
 
-Always use parameterized queries (`$1`, `$2`, ...) — never string interpolation in SQL.
+SQLには必ずパラメーター化クエリ（`$1`, `$2`, ...）を使用すること — 文字列補間は禁止。
 
-### SSL (Supabase / Railway)
+### SSL（Supabase / Railway）
 
-The PostgreSQL pool in `db.js` uses `ssl: { rejectUnauthorized: false }` for Supabase compatibility. Also resolves IPv4 explicitly for Railway deployment:
+`db.js` のPostgreSQLプールはSupabase互換のため `ssl: { rejectUnauthorized: false }` を使用。RailwayデプロイではIPv4を明示的に指定:
 ```js
 { family: 4 }
 ```
 
-## Environment Variables
+## 環境変数
 
-Required in `.env` (never committed — in `.gitignore`):
+`.env` ファイルに記載（コミット禁止 — `.gitignore` 対象）:
 
-| Variable | Description |
+| 変数名 | 説明 |
 |---|---|
-| `LINE_CHANNEL_SECRET` | LINE bot channel secret |
-| `LINE_CHANNEL_ACCESS_TOKEN` | LINE bot access token |
-| `DATABASE_URL` | PostgreSQL connection string (Supabase format) |
-| `PORT` | HTTP port (optional, defaults to `3000`) |
+| `LINE_CHANNEL_SECRET` | LINEボットのチャンネルシークレット |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINEボットのアクセストークン |
+| `DATABASE_URL` | PostgreSQL接続文字列（Supabase形式） |
+| `PORT` | HTTPポート（省略時デフォルト: `3000`） |
 
-## Deployment
+## デプロイ
 
-Deployed on **Railway** connected to **Supabase PostgreSQL**. The webhook URL must be registered in LINE Developers Console pointing to the Railway app URL at `/webhook`.
+**Railway** 上にデプロイし、**Supabase PostgreSQL** に接続。LINE Developers ConsoleでwebhookのURLを `/webhook` エンドポイントに設定する必要があります。
 
-## Dependencies
+## 依存パッケージ
 
-| Package | Purpose |
+| パッケージ | 用途 |
 |---|---|
 | `@line/bot-sdk` ^9.3.0 | LINE Messaging API |
-| `express` ^4.18.3 | HTTP server |
-| `pg` ^8.11.3 | PostgreSQL client |
-| `node-cron` ^3.0.3 | Cron scheduling |
-| `dotenv` ^16.4.5 | Environment variable loading |
-| `nodemon` ^3.1.0 | Dev auto-reload |
+| `express` ^4.18.3 | HTTPサーバー |
+| `pg` ^8.11.3 | PostgreSQLクライアント |
+| `node-cron` ^3.0.3 | cronスケジューリング |
+| `dotenv` ^16.4.5 | 環境変数の読み込み |
+| `nodemon` ^3.1.0 | 開発時の自動リロード |
